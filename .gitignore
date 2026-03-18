@@ -1,0 +1,36 @@
+# Nuxt
+.nuxt
+dist
+.output
+.env
+.env.local
+.env.*.local
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Node
+node_modules
+pnpm-lock.yaml
+yarn.lock
+package-lock.json
+
+# Hardhat
+artifacts
+cache
+typechain-types
+
+# Testing
+.nyc_output
+coverage
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*

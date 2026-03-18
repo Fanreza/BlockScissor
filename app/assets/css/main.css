@@ -1,0 +1,168 @@
+@import "tailwindcss";
+
+@theme {
+  /* True dark gaming base - from Dribbble/Behance research */
+  --color-background: #0a0a0f;
+  --color-foreground: #e6f1f8;
+
+  --color-primary: #7a27ff;
+  --color-primary-foreground: #ffffff;
+
+  --color-secondary: #1c1c28;
+  --color-secondary-foreground: #e6f1f8;
+
+  --color-accent: #26ffae;
+  --color-accent-foreground: #0a0a0f;
+
+  --color-muted: #1c1c28;
+  --color-muted-foreground: #576975;
+
+  --color-card: #141418;
+  --color-card-foreground: #e6f1f8;
+
+  --color-destructive: #ff008d;
+  --color-destructive-foreground: #ffffff;
+
+  --color-border: #2b2b3a;
+  --color-input: #2b2b3a;
+  --color-ring: #7a27ff;
+
+  --color-popover: #141418;
+  --color-popover-foreground: #e6f1f8;
+
+  /* Neon gaming palette */
+  --color-neon-cyan: #00fff2;
+  --color-neon-magenta: #ff008d;
+  --color-neon-lime: #26ffae;
+  --color-neon-gold: #e9cc5a;
+  --color-neon-purple: #7a27ff;
+
+  /* Typography */
+  --font-display: 'Orbitron', ui-sans-serif, system-ui, sans-serif;
+  --font-sans: 'Exo 2', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'Space Mono', ui-monospace, monospace;
+
+  --text-xs: 0.75rem;
+  --text-sm: 0.875rem;
+  --text-base: 1rem;
+  --text-lg: 1.125rem;
+  --text-xl: 1.25rem;
+  --spacing: 0.25rem;
+
+  --radius-sm: 0.25rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.75rem;
+}
+
+@layer base {
+  body {
+    @apply bg-background text-foreground;
+    background-image:
+      radial-gradient(circle at 50% 50%, #1a003010 0%, transparent 50%),
+      linear-gradient(#ffffff06 1px, transparent 1px),
+      linear-gradient(90deg, #ffffff06 1px, transparent 1px);
+    background-size: 100% 100%, 40px 40px, 40px 40px;
+  }
+
+  ::selection {
+    background: #7a27ff40;
+    color: #ffffff;
+  }
+}
+
+@layer components {
+  .card {
+    border-radius: 1rem;
+    border: 1px solid #2b2b3a;
+    background: #141418e0;
+    backdrop-filter: blur(12px);
+    color: var(--color-card-foreground);
+  }
+
+  .card:hover {
+    border-color: #7a27ff40;
+    box-shadow: 0 4px 24px #7a27ff15;
+  }
+
+  .btn {
+    @apply inline-flex items-center justify-center rounded-md px-4 py-2 font-semibold;
+    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .btn-primary {
+    background: linear-gradient(135deg, #7a27ff, #5c1ed6);
+    color: white;
+    border: 1px solid #7a27ff80;
+    box-shadow: 0 0 15px #7a27ff30, inset 0 1px 0 #ffffff15;
+  }
+
+  .btn-primary:hover {
+    box-shadow: 0 0 30px #7a27ff50, 0 4px 20px #0005;
+    transform: translateY(-2px);
+  }
+
+  .btn-secondary {
+    background: #1c1c28;
+    color: #e6f1f8;
+    border: 1px solid #2b2b3a;
+  }
+
+  .btn-secondary:hover {
+    border-color: #7a27ff60;
+    box-shadow: 0 0 15px #7a27ff20;
+  }
+
+  .btn-outline {
+    background: transparent;
+    border: 1px solid #2b2b3a;
+    color: #e6f1f8;
+  }
+
+  .btn-outline:hover {
+    border-color: #7a27ff;
+    color: #7a27ff;
+  }
+
+  .input {
+    @apply flex h-10 w-full rounded-md px-3 py-2 text-sm outline-none;
+    border: 1px solid #2b2b3a;
+    background: #0a0a0f;
+    color: #e6f1f8;
+    transition: all 0.2s;
+  }
+
+  .input:focus {
+    border-color: #7a27ff;
+    box-shadow: 0 0 15px #7a27ff25;
+  }
+
+  .input::placeholder {
+    color: #576975;
+  }
+
+  .label {
+    @apply text-sm font-medium leading-none;
+    color: #a0aab0;
+  }
+
+  /* Neon text glow - multi-layer for intensity */
+  .neon-text {
+    text-shadow:
+      0 0 7px currentColor,
+      0 0 10px currentColor,
+      0 0 21px currentColor,
+      0 0 42px currentColor;
+  }
+
+  .neon-text-subtle {
+    text-shadow: 0 0 10px currentColor, 0 0 20px currentColor;
+  }
+}
+
+/* Respect reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
