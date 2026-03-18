@@ -86,7 +86,7 @@
 <script setup lang="ts">
 import { GameChoice } from '~/composables/useRPS'
 
-const { playBotBestOf3, getGameCount, getBotGame3 } = useRPS()
+const { playBotBestOf3, getGameCount, getGame } = useRPS()
 const privy = usePrivy()
 const { playReveal, playRoundWin, playRoundLose, playDraw, playWin, playLose, muted, toggleMute } = useSoundEffects()
 const { fireWinConfetti, fireDrawConfetti } = useConfetti()
@@ -169,10 +169,19 @@ const submitToChain = async () => {
     // Wait a moment for state to settle
     await new Promise(r => setTimeout(r, 2000))
 
-    // Read actual results from contract
+    // Read actual results from contract (new unified Game struct)
     const count = await getGameCount()
     const gameId = count - 1n
-    const bot3 = await getBotGame3(gameId)
+    const game = await getGame(gameId)
+
+    // Map to bot3 format for revealRounds
+    const bot3 = {
+      playerChoices: game.choices1,
+      botChoices: game.choices2,
+      roundResults: game.roundResults,
+      playerWins: game.p1Wins,
+      botWins: game.p2Wins,
+    }
 
     // Now reveal results round by round with animation
     await revealRounds(bot3)

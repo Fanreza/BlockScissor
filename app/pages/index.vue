@@ -170,7 +170,7 @@
         <NuxtLink
           v-for="game in games"
           :key="game.id"
-          :to="`/game/${game.id}`"
+          :to="`/game/${encodeGameId(game.id)}`"
           class="game-card"
         >
           <div class="game-card-header">
@@ -212,16 +212,16 @@
                 placeholder="0.1"
                 class="stake-input"
               />
-              <p class="input-hint">Winner takes the full pot. Loser loses their stake.</p>
+              <p class="input-hint">Winner takes the full pot. You'll pick your 3 moves after opponent joins.</p>
             </div>
             <div class="modal-actions">
               <button @click="showCreateDialog = false" class="modal-btn-cancel">Cancel</button>
               <button
-                @click="createPvpGame"
+                @click="goToPvpSetup"
                 :disabled="!stakeAmount || creatingGame"
                 class="modal-btn-confirm"
               >
-                {{ creatingGame ? 'Creating...' : 'Create Match' }}
+                {{ creatingGame ? 'Creating...' : 'Create Room' }}
               </button>
             </div>
           </div>
@@ -233,7 +233,7 @@
 
 <script setup lang="ts">
 import { formatEther, parseEther } from 'viem'
-import { GamePhase } from '~/composables/useRPS'
+import { GamePhase, GameChoice } from '~/composables/useRPS'
 
 interface GameListItem {
   id: bigint
@@ -245,8 +245,7 @@ interface GameListItem {
 
 const privy = usePrivy()
 const {
-  createGame: createGameContract,
-  joinGame: joinGameContract,
+  createRoom,
   getGame,
   getGameCount,
 } = useRPS()
@@ -261,7 +260,6 @@ const liveUpdates = ref(0)
 const showCreateDialog = ref(false)
 const stakeAmount = ref('')
 const creatingGame = ref(false)
-const joiningGame = ref<bigint | null>(null)
 
 const connectWallet = () => privy.connectWallet()
 
@@ -281,21 +279,21 @@ const phaseBadgeClass = (phase: number) => {
   return 'badge-playing'
 }
 
-const createPvpGame = async () => {
+const goToPvpSetup = async () => {
   if (!stakeAmount.value || !isAuthenticated.value) return
   try {
     creatingGame.value = true
     const stake = parseEther(`${stakeAmount.value}`)
-    await createGameContract(stake, privy.user.value!.wallet!.address)
-    showCreateDialog.value = false
-    stakeAmount.value = ''
+    await createRoom(stake, privy.user.value!.wallet!.address)
 
-    // Get new game ID and navigate to room
     const count = await getGameCount()
     const newGameId = count - 1n
-    navigateTo(`/game/${newGameId}`)
+
+    showCreateDialog.value = false
+    stakeAmount.value = ''
+    navigateTo(`/game/${encodeGameId(newGameId)}`)
   } catch (error) {
-    console.error('Failed to create game:', error)
+    console.error('Failed to create room:', error)
   } finally {
     creatingGame.value = false
   }

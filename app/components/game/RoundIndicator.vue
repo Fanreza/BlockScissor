@@ -8,7 +8,7 @@
         <span class="text-muted-foreground">-</span>
         <span :class="botScore > playerScore ? 'text-neon-magenta' : 'text-foreground'">{{ botScore }}</span>
       </div>
-      <span class="text-neon-magenta">BOT</span>
+      <span class="text-neon-magenta">{{ opponentLabel }}</span>
     </div>
 
     <!-- Round dots -->
@@ -37,13 +37,16 @@
 </template>
 
 <script setup lang="ts">
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   currentRound: number
   completedRounds: number
   playerScore: number
   botScore: number
   roundResults: Array<'win' | 'lose' | 'draw' | null>
-}>()
+  opponentLabel?: string
+}>(), {
+  opponentLabel: 'BOT',
+})
 
 const getRoundClass = (round: number) => {
   const result = props.roundResults[round - 1]

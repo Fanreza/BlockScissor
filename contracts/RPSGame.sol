@@ -1,11 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-/**
- * @title RPSGame
- * @dev Reactive Rock-Paper-Scissors game on Somnia Network
- * Supports PvP (commit-reveal) and PvBot (pseudo-random) modes
- */
+/// @title RPSGame — Best of 3, PvP + PvBot on Somnia
 contract RPSGame {
     enum Choice { None, Rock, Paper, Scissors }
     enum Phase { Open, Commit, Reveal, Finished }
@@ -15,8 +11,11 @@ contract RPSGame {
         address player2;
         bytes32 commit1;
         bytes32 commit2;
-        Choice reveal1;
-        Choice reveal2;
+        uint8[3] choices1;
+        uint8[3] choices2;
+        uint8[3] roundResults; // 1=p1 win, 2=p2 win, 3=draw
+        uint8 p1Wins;
+        uint8 p2Wins;
         address winner;
         Phase phase;
         uint256 stake;
@@ -24,29 +23,15 @@ contract RPSGame {
         bool isBot;
     }
 
-    struct BotGame3 {
-        address player;
-        uint8[3] playerChoices;
-        uint8[3] botChoices;
-        uint8[3] roundResults; // 0=draw, 1=player wins, 2=bot wins
-        uint8 playerWins;
-        uint8 botWins;
-        address winner;
-    }
-
     mapping(uint256 => Game) public games;
-    mapping(uint256 => BotGame3) public botGames3;
     uint256 public gameCount;
     uint256 public constant TIMEOUT = 5 minutes;
 
-    // Events
     event GameCreated(uint256 indexed gameId, address indexed player1, uint256 stake);
-    event BotGameCreated(uint256 indexed gameId, address indexed player1);
     event PlayerJoined(uint256 indexed gameId, address indexed player2);
     event PlayerCommitted(uint256 indexed gameId, address indexed player, uint8 playerNum);
-    event PlayerRevealed(uint256 indexed gameId, address indexed player, uint8 choice);
-    event GameEnded(uint256 indexed gameId, address indexed winner, uint8 choice1, uint8 choice2);
-    event GameDraw(uint256 indexed gameId, uint8 choice);
+    event PlayerRevealed(uint256 indexed gameId, address indexed player);
+    event PvPGame3Ended(uint256 indexed gameId, address indexed winner, uint8 p1Wins, uint8 p2Wins);
     event BotGame3Ended(uint256 indexed gameId, address indexed player, uint8 playerWins, uint8 botWins);
 
     modifier gameExists(uint256 gameId) {
@@ -54,302 +39,235 @@ contract RPSGame {
         _;
     }
 
-    modifier isPlayer(uint256 gameId) {
-        require(
-            msg.sender == games[gameId].player1 || msg.sender == games[gameId].player2,
-            "Not a player in this game"
-        );
-        _;
-    }
+    // ===== PvP: Step 1 — Create Room =====
 
-    // ===== PvP Functions =====
-
-    function createGame() external payable {
-        require(msg.value > 0, "Stake must be greater than 0");
-
+    function createRoom() external payable {
+        require(msg.value > 0, "Stake required");
         uint256 gameId = gameCount++;
-        games[gameId] = Game({
-            player1: msg.sender,
-            player2: address(0),
-            commit1: bytes32(0),
-            commit2: bytes32(0),
-            reveal1: Choice.None,
-            reveal2: Choice.None,
-            winner: address(0),
-            phase: Phase.Open,
-            stake: msg.value,
-            deadline: 0,
-            isBot: false
-        });
-
+        Game storage g = games[gameId];
+        g.player1 = msg.sender;
+        g.phase = Phase.Open;
+        g.stake = msg.value;
         emit GameCreated(gameId, msg.sender, msg.value);
     }
 
-    function joinGame(uint256 gameId) external payable gameExists(gameId) {
-        Game storage game = games[gameId];
-        require(game.phase == Phase.Open, "Game is not open");
-        require(!game.isBot, "Cannot join bot game");
-        require(msg.value == game.stake, "Stake amount must match");
-        require(msg.sender != game.player1, "Cannot play against yourself");
+    // ===== PvP: Step 2 — Join Room =====
 
-        game.player2 = msg.sender;
-        game.phase = Phase.Commit;
-        game.deadline = block.timestamp + TIMEOUT;
+    function joinRoom(uint256 gameId) external payable gameExists(gameId) {
+        Game storage g = games[gameId];
+        require(g.phase == Phase.Open, "Not open");
+        require(!g.isBot, "Bot game");
+        require(msg.value == g.stake, "Stake mismatch");
+        require(msg.sender != g.player1, "Cannot self-play");
+
+        g.player2 = msg.sender;
+        g.phase = Phase.Commit;
+        g.deadline = block.timestamp + TIMEOUT;
 
         emit PlayerJoined(gameId, msg.sender);
     }
 
-    function commit(uint256 gameId, bytes32 commitHash) external gameExists(gameId) isPlayer(gameId) {
-        Game storage game = games[gameId];
-        require(game.phase == Phase.Commit, "Game is not in commit phase");
-        require(block.timestamp <= game.deadline, "Commit deadline has passed");
+    // ===== PvP: Step 3 — Commit 3 Choices =====
 
-        if (msg.sender == game.player1) {
-            require(game.commit1 == bytes32(0), "Already committed");
-            game.commit1 = commitHash;
+    function commitChoices(uint256 gameId, bytes32 commitHash) external gameExists(gameId) {
+        Game storage g = games[gameId];
+        require(g.phase == Phase.Commit, "Not in commit phase");
+        require(block.timestamp <= g.deadline, "Deadline passed");
+        require(commitHash != bytes32(0), "Invalid hash");
+
+        if (msg.sender == g.player1) {
+            require(g.commit1 == bytes32(0), "Already committed");
+            g.commit1 = commitHash;
             emit PlayerCommitted(gameId, msg.sender, 1);
-        } else {
-            require(game.commit2 == bytes32(0), "Already committed");
-            game.commit2 = commitHash;
+        } else if (msg.sender == g.player2) {
+            require(g.commit2 == bytes32(0), "Already committed");
+            g.commit2 = commitHash;
             emit PlayerCommitted(gameId, msg.sender, 2);
-        }
-
-        if (game.commit1 != bytes32(0) && game.commit2 != bytes32(0)) {
-            game.phase = Phase.Reveal;
-            game.deadline = block.timestamp + TIMEOUT;
-        }
-    }
-
-    function reveal(
-        uint256 gameId,
-        Choice choice,
-        bytes32 salt
-    ) external gameExists(gameId) isPlayer(gameId) {
-        Game storage game = games[gameId];
-        require(game.phase == Phase.Reveal, "Game is not in reveal phase");
-        require(block.timestamp <= game.deadline, "Reveal deadline has passed");
-        require(choice != Choice.None, "Invalid choice");
-
-        bytes32 commitHash = keccak256(abi.encodePacked(uint8(choice), salt));
-
-        if (msg.sender == game.player1) {
-            require(game.reveal1 == Choice.None, "Already revealed");
-            require(game.commit1 == commitHash, "Hash mismatch");
-            game.reveal1 = choice;
-            emit PlayerRevealed(gameId, msg.sender, uint8(choice));
         } else {
-            require(game.reveal2 == Choice.None, "Already revealed");
-            require(game.commit2 == commitHash, "Hash mismatch");
-            game.reveal2 = choice;
-            emit PlayerRevealed(gameId, msg.sender, uint8(choice));
+            revert("Not a player");
         }
 
-        if (game.reveal1 != Choice.None && game.reveal2 != Choice.None) {
-            _resolveGame(gameId);
+        // Both committed → move to reveal
+        if (g.commit1 != bytes32(0) && g.commit2 != bytes32(0)) {
+            g.phase = Phase.Reveal;
+            g.deadline = block.timestamp + TIMEOUT;
         }
     }
+
+    // ===== PvP: Step 4 — Reveal 3 Choices =====
+
+    function revealChoices(
+        uint256 gameId,
+        uint8[3] calldata choices,
+        bytes32[3] calldata salts
+    ) external gameExists(gameId) {
+        Game storage g = games[gameId];
+        require(g.phase == Phase.Reveal, "Not in reveal phase");
+        require(block.timestamp <= g.deadline, "Deadline passed");
+
+        for (uint256 i = 0; i < 3; i++) {
+            require(choices[i] >= 1 && choices[i] <= 3, "Invalid choice");
+        }
+
+        bytes32 commitHash = keccak256(abi.encodePacked(
+            choices[0], choices[1], choices[2],
+            salts[0], salts[1], salts[2]
+        ));
+
+        if (msg.sender == g.player1) {
+            require(g.choices1[0] == 0, "Already revealed");
+            require(g.commit1 == commitHash, "Hash mismatch");
+            g.choices1 = choices;
+            emit PlayerRevealed(gameId, msg.sender);
+        } else if (msg.sender == g.player2) {
+            require(g.choices2[0] == 0, "Already revealed");
+            require(g.commit2 == commitHash, "Hash mismatch");
+            g.choices2 = choices;
+            emit PlayerRevealed(gameId, msg.sender);
+        } else {
+            revert("Not a player");
+        }
+
+        if (g.choices1[0] != 0 && g.choices2[0] != 0) {
+            _resolvePvP3(gameId);
+        }
+    }
+
+    // ===== Timeout =====
 
     function claimTimeout(uint256 gameId) external gameExists(gameId) {
-        Game storage game = games[gameId];
-        require(block.timestamp > game.deadline, "Deadline has not passed");
-        require(game.phase == Phase.Commit || game.phase == Phase.Reveal, "Invalid phase");
+        Game storage g = games[gameId];
+        require(block.timestamp > g.deadline, "Not expired");
+        require(g.phase == Phase.Commit || g.phase == Phase.Reveal, "Invalid phase");
 
-        if (game.phase == Phase.Commit) {
-            if (game.commit1 == bytes32(0) && game.commit2 != bytes32(0)) {
-                game.winner = game.player2;
-                (bool s, ) = game.player2.call{value: game.stake * 2}("");
-                require(s, "Transfer failed");
-            } else if (game.commit2 == bytes32(0) && game.commit1 != bytes32(0)) {
-                game.winner = game.player1;
-                (bool s, ) = game.player1.call{value: game.stake * 2}("");
-                require(s, "Transfer failed");
+        if (g.phase == Phase.Commit) {
+            bool c1 = g.commit1 != bytes32(0);
+            bool c2 = g.commit2 != bytes32(0);
+            if (c1 && !c2) {
+                g.winner = g.player1;
+                (bool s, ) = g.player1.call{value: g.stake * 2}("");
+                require(s);
+            } else if (c2 && !c1) {
+                g.winner = g.player2;
+                (bool s, ) = g.player2.call{value: g.stake * 2}("");
+                require(s);
             } else {
-                (bool s1, ) = game.player1.call{value: game.stake}("");
-                (bool s2, ) = game.player2.call{value: game.stake}("");
-                require(s1 && s2, "Transfer failed");
+                (bool s1, ) = g.player1.call{value: g.stake}("");
+                (bool s2, ) = g.player2.call{value: g.stake}("");
+                require(s1 && s2);
             }
         } else {
-            if (game.reveal1 == Choice.None && game.reveal2 != Choice.None) {
-                game.winner = game.player2;
-                (bool s, ) = game.player2.call{value: game.stake * 2}("");
-                require(s, "Transfer failed");
-            } else if (game.reveal2 == Choice.None && game.reveal1 != Choice.None) {
-                game.winner = game.player1;
-                (bool s, ) = game.player1.call{value: game.stake * 2}("");
-                require(s, "Transfer failed");
+            bool r1 = g.choices1[0] != 0;
+            bool r2 = g.choices2[0] != 0;
+            if (r1 && !r2) {
+                g.winner = g.player1;
+                (bool s, ) = g.player1.call{value: g.stake * 2}("");
+                require(s);
+            } else if (r2 && !r1) {
+                g.winner = g.player2;
+                (bool s, ) = g.player2.call{value: g.stake * 2}("");
+                require(s);
             } else {
-                (bool s1, ) = game.player1.call{value: game.stake}("");
-                (bool s2, ) = game.player2.call{value: game.stake}("");
-                require(s1 && s2, "Transfer failed");
+                (bool s1, ) = g.player1.call{value: g.stake}("");
+                (bool s2, ) = g.player2.call{value: g.stake}("");
+                require(s1 && s2);
             }
         }
-
-        game.phase = Phase.Finished;
+        g.phase = Phase.Finished;
     }
 
-    // ===== Bot Functions =====
+    // ===== Bot Best of 3 (1 tx) =====
 
-    /**
-     * @dev Play against bot in a single transaction - no commit-reveal needed
-     * Bot choice is pseudo-random from block data
-     */
-    function playBot(Choice choice) external {
-        require(choice != Choice.None, "Invalid choice");
-
-        uint256 gameId = gameCount++;
-
-        // Generate bot choice from pseudo-random
-        uint256 rand = uint256(keccak256(abi.encodePacked(
-            blockhash(block.number - 1),
-            block.timestamp,
-            gameId,
-            msg.sender
-        )));
-        Choice botChoice = Choice((rand % 3) + 1);
-
-        address winner = address(0);
-        if (choice != botChoice) {
-            winner = _winsOver(choice, botChoice) ? msg.sender : address(this);
-        }
-
-        games[gameId] = Game({
-            player1: msg.sender,
-            player2: address(this),
-            commit1: bytes32(0),
-            commit2: bytes32(0),
-            reveal1: choice,
-            reveal2: botChoice,
-            winner: winner,
-            phase: Phase.Finished,
-            stake: 0,
-            deadline: 0,
-            isBot: true
-        });
-
-        emit BotGameCreated(gameId, msg.sender);
-
-        if (choice == botChoice) {
-            emit GameDraw(gameId, uint8(choice));
-        } else {
-            emit GameEnded(gameId, winner, uint8(choice), uint8(botChoice));
-        }
-    }
-
-    /**
-     * @dev Play a best-of-3 against the bot in a single transaction
-     * Player submits all 3 choices upfront; bot choices are pseudo-random per round
-     */
     function playBotBestOf3(uint8[3] calldata choices) external {
-        // Validate all 3 choices are 1-3
         for (uint256 i = 0; i < 3; i++) {
-            require(choices[i] >= 1 && choices[i] <= 3, "Invalid choice: must be 1-3");
+            require(choices[i] >= 1 && choices[i] <= 3, "Invalid choice");
         }
 
         uint256 gameId = gameCount++;
+        Game storage g = games[gameId];
+        g.player1 = msg.sender;
+        g.player2 = address(this);
+        g.isBot = true;
+        g.phase = Phase.Finished;
+        g.choices1 = choices;
 
-        uint8[3] memory botChoicesRaw;
-        uint8[3] memory roundResults;
         uint8 playerWins = 0;
         uint8 botWins = 0;
 
         for (uint256 i = 0; i < 3; i++) {
-            // Generate bot choice with a unique seed per round
             uint256 rand = uint256(keccak256(abi.encodePacked(
-                blockhash(block.number - 1),
-                block.timestamp,
-                gameId,
-                msg.sender,
-                i
+                blockhash(block.number - 1), block.timestamp, gameId, msg.sender, i
             )));
             uint8 botChoice = uint8((rand % 3) + 1);
-            botChoicesRaw[i] = botChoice;
+            g.choices2[i] = botChoice;
 
-            Choice playerChoice = Choice(choices[i]);
-            Choice botChoiceEnum = Choice(botChoice);
-
-            if (playerChoice == botChoiceEnum) {
-                roundResults[i] = 0; // draw
-            } else if (_winsOver(playerChoice, botChoiceEnum)) {
-                roundResults[i] = 1; // player wins
+            if (choices[i] == botChoice) {
+                g.roundResults[i] = 3;
+            } else if (_winsOver(Choice(choices[i]), Choice(botChoice))) {
+                g.roundResults[i] = 1;
                 playerWins++;
             } else {
-                roundResults[i] = 2; // bot wins
+                g.roundResults[i] = 2;
                 botWins++;
             }
         }
 
-        // Determine overall winner (most wins)
-        address winner = address(0);
-        if (playerWins > botWins) {
-            winner = msg.sender;
-        } else if (botWins > playerWins) {
-            winner = address(this);
-        }
-
-        // Store in botGames3 mapping
-        botGames3[gameId] = BotGame3({
-            player: msg.sender,
-            playerChoices: choices,
-            botChoices: botChoicesRaw,
-            roundResults: roundResults,
-            playerWins: playerWins,
-            botWins: botWins,
-            winner: winner
-        });
-
-        // Store in games mapping (marked as bot, phase Finished)
-        games[gameId] = Game({
-            player1: msg.sender,
-            player2: address(this),
-            commit1: bytes32(0),
-            commit2: bytes32(0),
-            reveal1: Choice(choices[0]),
-            reveal2: Choice(botChoicesRaw[0]),
-            winner: winner,
-            phase: Phase.Finished,
-            stake: 0,
-            deadline: 0,
-            isBot: true
-        });
+        g.p1Wins = playerWins;
+        g.p2Wins = botWins;
+        if (playerWins > botWins) g.winner = msg.sender;
+        else if (botWins > playerWins) g.winner = address(this);
 
         emit BotGame3Ended(gameId, msg.sender, playerWins, botWins);
     }
 
-    // ===== View Functions =====
+    // ===== View =====
 
     function getGame(uint256 gameId) external view gameExists(gameId) returns (Game memory) {
         return games[gameId];
     }
 
-    function getBotGame3(uint256 gameId) external view gameExists(gameId) returns (BotGame3 memory) {
-        return botGames3[gameId];
-    }
-
     // ===== Internal =====
 
-    function _resolveGame(uint256 gameId) internal {
-        Game storage game = games[gameId];
-        game.phase = Phase.Finished;
+    function _resolvePvP3(uint256 gameId) internal {
+        Game storage g = games[gameId];
+        g.phase = Phase.Finished;
 
-        Choice c1 = game.reveal1;
-        Choice c2 = game.reveal2;
+        uint8 p1w = 0;
+        uint8 p2w = 0;
 
-        if (c1 == c2) {
-            (bool s1, ) = game.player1.call{value: game.stake}("");
-            (bool s2, ) = game.player2.call{value: game.stake}("");
-            require(s1 && s2, "Transfer failed");
-            emit GameDraw(gameId, uint8(c1));
-        } else if (_winsOver(c1, c2)) {
-            game.winner = game.player1;
-            (bool s, ) = game.player1.call{value: game.stake * 2}("");
-            require(s, "Transfer failed");
-            emit GameEnded(gameId, game.player1, uint8(c1), uint8(c2));
-        } else {
-            game.winner = game.player2;
-            (bool s, ) = game.player2.call{value: game.stake * 2}("");
-            require(s, "Transfer failed");
-            emit GameEnded(gameId, game.player2, uint8(c1), uint8(c2));
+        for (uint256 i = 0; i < 3; i++) {
+            Choice c1 = Choice(g.choices1[i]);
+            Choice c2 = Choice(g.choices2[i]);
+
+            if (c1 == c2) {
+                g.roundResults[i] = 3;
+            } else if (_winsOver(c1, c2)) {
+                g.roundResults[i] = 1;
+                p1w++;
+            } else {
+                g.roundResults[i] = 2;
+                p2w++;
+            }
         }
+
+        g.p1Wins = p1w;
+        g.p2Wins = p2w;
+
+        if (p1w > p2w) {
+            g.winner = g.player1;
+            (bool s, ) = g.player1.call{value: g.stake * 2}("");
+            require(s);
+        } else if (p2w > p1w) {
+            g.winner = g.player2;
+            (bool s, ) = g.player2.call{value: g.stake * 2}("");
+            require(s);
+        } else {
+            (bool s1, ) = g.player1.call{value: g.stake}("");
+            (bool s2, ) = g.player2.call{value: g.stake}("");
+            require(s1 && s2);
+        }
+
+        emit PvPGame3Ended(gameId, g.winner, p1w, p2w);
     }
 
     function _winsOver(Choice a, Choice b) internal pure returns (bool) {

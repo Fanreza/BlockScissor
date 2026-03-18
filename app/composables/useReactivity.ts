@@ -23,12 +23,11 @@ const somniaTestnet = defineChain({
 // Events ABI for decoding raw reactive callbacks
 const EVENTS_ABI = [
   { type: 'event', name: 'GameCreated', inputs: [{ name: 'gameId', type: 'uint256', indexed: true }, { name: 'player1', type: 'address', indexed: true }, { name: 'stake', type: 'uint256', indexed: false }] },
-  { type: 'event', name: 'BotGame3Ended', inputs: [{ name: 'gameId', type: 'uint256', indexed: true }, { name: 'player', type: 'address', indexed: true }, { name: 'playerWins', type: 'uint8', indexed: false }, { name: 'botWins', type: 'uint8', indexed: false }] },
-  { type: 'event', name: 'GameEnded', inputs: [{ name: 'gameId', type: 'uint256', indexed: true }, { name: 'winner', type: 'address', indexed: true }, { name: 'choice1', type: 'uint8', indexed: false }, { name: 'choice2', type: 'uint8', indexed: false }] },
-  { type: 'event', name: 'GameDraw', inputs: [{ name: 'gameId', type: 'uint256', indexed: true }, { name: 'choice', type: 'uint8', indexed: false }] },
   { type: 'event', name: 'PlayerJoined', inputs: [{ name: 'gameId', type: 'uint256', indexed: true }, { name: 'player2', type: 'address', indexed: true }] },
   { type: 'event', name: 'PlayerCommitted', inputs: [{ name: 'gameId', type: 'uint256', indexed: true }, { name: 'player', type: 'address', indexed: true }, { name: 'playerNum', type: 'uint8', indexed: false }] },
-  { type: 'event', name: 'PlayerRevealed', inputs: [{ name: 'gameId', type: 'uint256', indexed: true }, { name: 'player', type: 'address', indexed: true }, { name: 'choice', type: 'uint8', indexed: false }] },
+  { type: 'event', name: 'PlayerRevealed', inputs: [{ name: 'gameId', type: 'uint256', indexed: true }, { name: 'player', type: 'address', indexed: true }] },
+  { type: 'event', name: 'PvPGame3Ended', inputs: [{ name: 'gameId', type: 'uint256', indexed: true }, { name: 'winner', type: 'address', indexed: true }, { name: 'p1Wins', type: 'uint8', indexed: false }, { name: 'p2Wins', type: 'uint8', indexed: false }] },
+  { type: 'event', name: 'BotGame3Ended', inputs: [{ name: 'gameId', type: 'uint256', indexed: true }, { name: 'player', type: 'address', indexed: true }, { name: 'playerWins', type: 'uint8', indexed: false }, { name: 'botWins', type: 'uint8', indexed: false }] },
 ] as const
 
 // Reverse lookup: topic0 hash → event name

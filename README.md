@@ -1,218 +1,118 @@
-# Reactive Rock-Paper-Scissors (⚡RPS)
+# BlockScissor
 
-A multiplayer Rock-Paper-Scissors game built on Somnia Network with real-time on-chain reactivity.
+On-chain Rock-Paper-Scissors on Somnia Network with real-time reactive updates.
 
-## Features
+Play best-of-3 against an on-chain bot or stake STT in PvP matches using commit-reveal.
 
-- 🎮 **Multiplayer Gameplay**: Play Rock-Paper-Scissors with real stakes
-- ⚡ **Real-Time Reactivity**: Instant game state updates via Somnia Reactivity SDK
-- 💰 **Staking System**: Players wager STT tokens with winner-takes-all payouts
-- 🔐 **Commit-Reveal Scheme**: Fair gameplay using cryptographic commitment hashing
-- 🪙 **On-Chain**: Fully decentralized, contracts deployed on Somnia Testnet
-- 📊 **Leaderboard**: Track player stats and game history
+**Live**: [blockscissor.vercel.app](https://blockscissor.vercel.app) (Somnia Testnet)
+
+## How It Works
+
+### Bot Mode (Best of 3)
+1. Pick your 3 choices (Rock/Paper/Scissors) round by round
+2. All 3 choices are submitted in a single transaction
+3. Bot choices are generated on-chain via pseudo-random (`keccak256(blockhash, timestamp, gameId, sender, round)`)
+4. Results are resolved immediately — no waiting
+
+### PvP Mode (Commit-Reveal)
+1. Player 1 creates a match with a STT stake
+2. Player 2 joins with the same stake
+3. Both players commit `keccak256(choice, salt)` — hiding their move
+4. Both players reveal their choice + salt — contract verifies the hash
+5. Winner takes the full pot (2x stake). Draw returns stakes. 5-minute timeout per phase.
+
+### Reactivity
+The leaderboard and game pages update in real-time using the [Somnia Reactivity SDK](https://docs.somnia.network/developer/reactivity) (`@somnia-chain/reactivity`). The SDK subscribes to contract events via `somnia_watch` WebSocket — no polling.
+
+Events tracked: `GameCreated`, `BotGame3Ended`, `GameEnded`, `GameDraw`, `PlayerJoined`, `PlayerCommitted`, `PlayerRevealed`
 
 ## Tech Stack
 
-- **Frontend**: Nuxt 4 (Vue 3) + TypeScript
-- **Styling**: Tailwind CSS v4 + shadcn-vue
-- **Web3**: Viem + Privy (Wallet Integration) + @somnia-chain/reactivity
-- **Smart Contracts**: Solidity 0.8.20
-- **Deployment**: Hardhat
-
-## Prerequisites
-
-- Node.js 18+ and pnpm
-- MetaMask or compatible web3 wallet
-- Somnia Testnet configured in your wallet
-- STT testnet tokens (get from [faucet](https://testnet.somnia.network/))
+| Layer | Tech |
+|-------|------|
+| Frontend | Nuxt 4, Vue 3, TypeScript |
+| Styling | Tailwind CSS v4 |
+| Wallet | Privy SDK (MetaMask fallback) |
+| Chain | Viem, `@somnia-chain/reactivity` |
+| Contract | Solidity 0.8.20, Hardhat |
+| Network | Somnia Testnet (Chain ID: 50312) |
 
 ## Setup
 
-### 1. Clone and Install
+### Prerequisites
+- Node.js 18+, pnpm
+- MetaMask with [Somnia Testnet](https://docs.somnia.network/developer/network-info) configured
+- STT tokens from the [faucet](https://testnet.somnia.network/)
+
+### Install & Configure
 
 ```bash
-cd reactive-rps
 pnpm install
-```
-
-### 2. Configure Environment
-
-```bash
 cp .env.example .env.local
 ```
 
-Fill in:
-- `NUXT_PUBLIC_PRIVY_APP_ID` (get from [privy.io](https://privy.io))
-- `NUXT_PUBLIC_CONTRACT_ADDRESS` (after deployment)
-- `PRIVATE_KEY` (for contract deployment)
+Fill `.env.local`:
+```
+NUXT_PUBLIC_PRIVY_APP_ID=       # from privy.io
+NUXT_PUBLIC_CONTRACT_ADDRESS=   # after deploying
+PRIVATE_KEY=                    # for deployment only
+```
 
-### 3. Deploy Smart Contract
+### Deploy Contract
 
 ```bash
-pnpm run hardhat deploy --network somniaTestnet
+npx hardhat compile
+npx hardhat run scripts/deploy.cjs --network somniaTestnet
 ```
 
-Copy the deployed contract address to `.env.local`.
+Copy the printed contract address to `.env.local`.
 
-### 4. Start Development Server
+### Run
 
 ```bash
-pnpm run dev
+pnpm dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) in your browser.
+## Contract
 
-## How to Play
+**File**: `contracts/RPSGame.sol`
 
-1. **Connect Wallet** - Click "Connect Wallet" button
-2. **Create Game** - Choose your stake amount and create a new game
-3. **Join Game** - Find an open game and join with the same stake
-4. **Commit** - Secretly commit your choice (Rock/Paper/Scissors) with a random salt
-5. **Reveal** - Reveal your choice after opponent has committed
-6. **Win** - Winner receives 2x the total stake
+Single contract handling both PvP and bot games. No factory pattern — all games stored in one mapping.
 
-## Game Mechanics
-
-### Commit-Reveal Scheme
-
-- Players first commit a hash: `keccak256(choice || salt)`
-- After both commitments, players reveal their choice and salt
-- Contract verifies the hash matches the commitment
-- Prevents players from changing their choice based on opponent's move
-
-### Payouts
-
-- **Win**: Receive 2x your stake (your stake + opponent's stake)
-- **Draw**: Both players get their stake back
-- **Timeout**: Non-acting player wins the full pot
-
-### Timeout Management
-
-- Commit phase: 5 minutes
-- Reveal phase: 5 minutes
-- Either player can claim timeout and win if opponent doesn't act
-
-## Contract Events (Reactive)
-
-The frontend subscribes to real-time contract events via Somnia Reactivity:
-
-- `GameCreated` - New game started
-- `PlayerJoined` - Opponent joined your game
-- `PlayerCommitted` - Player committed their choice
-- `PlayerRevealed` - Player revealed their choice
-- `GameEnded` - Game finished with winner
-- `GameDraw` - Game ended in a draw
-
-## Deployment
-
-### On Somnia Testnet
-
-```bash
-# Set your private key
-export PRIVATE_KEY="your_private_key_here"
-
-# Deploy contract
-pnpm run hardhat deploy --network somniaTestnet
-
-# Verify on explorer
-pnpm run hardhat verify --network somniaTestnet CONTRACT_ADDRESS
-```
-
-### Contract Address
-
-After deployment, save the contract address and update `.env.local`:
-```
-NUXT_PUBLIC_CONTRACT_ADDRESS=0x...
-```
+Key functions:
+- `createGame()` — Create PvP match (payable, sets stake)
+- `joinGame(gameId)` — Join open PvP match (must match stake)
+- `commit(gameId, hash)` / `reveal(gameId, choice, salt)` — Commit-reveal flow
+- `claimTimeout(gameId)` — Claim win if opponent times out (5 min)
+- `playBotBestOf3(uint8[3] choices)` — Single-tx bot game, 3 rounds
+- `getGame(gameId)` / `getBotGame3(gameId)` — Read game state
 
 ## Project Structure
 
 ```
-reactive-rps/
-├── app/                    # Nuxt app source
-│   ├── components/         # Vue components
-│   │   ├── ui/            # shadcn-vue components
-│   │   ├── game/          # Game-specific components
-│   │   └── layout/        # Layout components
-│   ├── composables/       # Vue composables
-│   ├── pages/             # Nuxt pages
-│   ├── plugins/           # Nuxt plugins
-│   └── assets/            # Static assets
-├── contracts/             # Solidity contracts
-├── scripts/               # Hardhat scripts
-├── hardhat.config.ts      # Hardhat config
-└── nuxt.config.ts         # Nuxt config
+app/
+  composables/
+    useRPS.ts          # Contract read/write functions
+    useReactivity.ts   # Somnia Reactivity SDK subscriptions
+    useViemClients.ts  # Viem public + wallet client setup
+    usePrivy.ts        # Wallet auth via Privy
+  pages/
+    index.vue          # Homepage + PvP lobby
+    game/bot.vue       # Bot best-of-3 game flow
+    game/[id].vue      # PvP game room
+    leaderboard.vue    # Stats + recent games
+  components/game/     # ChoiceSelector, BattleArena, Overlay, etc.
+contracts/
+  RPSGame.sol          # Main contract
 ```
-
-## Composables
-
-- **usePrivy**: Wallet connection via Privy (with MetaMask fallback)
-- **useViemClients**: Viem public/wallet clients management
-- **useRPS**: Contract interaction functions
-- **useReactivity**: Somnia Reactivity SDK integration
-
-## Development
-
-### Building
-
-```bash
-pnpm run build
-```
-
-### Type Checking
-
-```bash
-pnpm run typecheck
-```
-
-### Testing Locally
-
-```bash
-# Terminal 1: Start local Hardhat node
-pnpm hardhat node
-
-# Terminal 2: Deploy to local network
-pnpm hardhat deploy --network localhost
-
-# Terminal 3: Start dev server
-pnpm run dev
-```
-
-## Known Limitations
-
-- Privy support uses vanilla JS SDK (no official Vue adapter)
-- MetaMask fallback for wallet connection
-- Single game contract (no factory pattern yet)
-- Leaderboard stats are mock data (TODO: implement from events)
-
-## Future Enhancements
-
-- [ ] Real leaderboard from on-chain events
-- [ ] Game history and analytics
-- [ ] Replay system
-- [ ] Seasonal rankings
-- [ ] Custom token support
-- [ ] Multiplayer lobbies
-- [ ] ELO rating system
-- [ ] NFT rewards
 
 ## Security
 
-⚠️ **Audit Notice**: This contract has NOT been audited. Do not use with real funds.
+This contract is **not audited**. Do not use with real funds.
 
-### Commit-Reveal Safeguards
-
-- Hash verification prevents choice tampering
-- Timeout mechanism prevents indefinite hanging
-- Secure random salt generation
-- Proper fund handling with low-level calls
-
-## Support
-
-- **Docs**: [Somnia Docs](https://docs.somnia.network/)
-- **Reactivity**: [Somnia Reactivity Guide](https://docs.somnia.network/developer/reactivity)
-- **Discord**: [Somnia Discord](https://discord.gg/somnia)
-- **Telegram**: [Somnia Telegram](https://t.me/+XHq0F0JXMyhmMzM0)
+- Commit-reveal prevents move snooping in PvP
+- Timeout prevents indefinite game locks
+- Bot randomness is pseudo-random (blockhash-based) — not suitable for high-stakes
 
 ## License
 

@@ -203,7 +203,7 @@ interface RecentGameItem {
   botWins: number
 }
 
-const { getGame, getGameCount, getBotGame3 } = useRPS()
+const { getGame, getGameCount } = useRPS()
 const { subscribeToAllGames, isConnected: reactivityConnected } = useReactivity()
 
 const loading = ref(true)
@@ -254,18 +254,17 @@ const loadLeaderboard = async () => {
 
         if (game.isBot) {
           botCount++
-          try {
-            const bot3 = await getBotGame3(i)
-            for (const c of bot3.playerChoices) {
-              if (c >= 1 && c <= 3) choiceCounts[c]++
-            }
-          } catch {
-            if (game.reveal1 >= 1 && game.reveal1 <= 3) choiceCounts[game.reveal1]++
-          }
         } else {
           pvpCount++
-          if (game.reveal1 >= 1 && game.reveal1 <= 3) choiceCounts[game.reveal1]++
-          if (game.reveal2 >= 1 && game.reveal2 <= 3) choiceCounts[game.reveal2]++
+        }
+        // Count choices from all 3 rounds
+        for (const c of game.choices1) {
+          if (c >= 1 && c <= 3) choiceCounts[c]++
+        }
+        if (!game.isBot) {
+          for (const c of game.choices2) {
+            if (c >= 1 && c <= 3) choiceCounts[c]++
+          }
         }
 
         const ensurePlayer = (addr: string) => {
@@ -285,15 +284,6 @@ const loadLeaderboard = async () => {
         }
 
         if (recent.length < 15) {
-          let pWins = 0
-          let bWins = 0
-          if (game.isBot) {
-            try {
-              const bot3 = await getBotGame3(i)
-              pWins = bot3.playerWins
-              bWins = bot3.botWins
-            } catch {}
-          }
           recent.push({
             id: i,
             player1: game.player1,
@@ -301,8 +291,8 @@ const loadLeaderboard = async () => {
             winner: game.winner,
             isBot: game.isBot,
             isDraw,
-            playerWins: pWins,
-            botWins: bWins,
+            playerWins: game.p1Wins,
+            botWins: game.p2Wins,
           })
         }
       } catch {}

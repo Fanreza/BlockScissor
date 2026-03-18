@@ -28,12 +28,50 @@ export const useViemClients = () => {
     }
   }
 
+  // Ensure wallet is on Somnia Testnet
+  const ensureCorrectChain = async () => {
+    try {
+      const provider = await privy.getProvider()
+      const chainId = await provider.request({ method: 'eth_chainId' })
+      const currentChainId = parseInt(chainId as string, 16)
+
+      if (currentChainId !== $somniaTestnet.id) {
+        const addChainParams = [{
+          chainId: `0x${$somniaTestnet.id.toString(16)}`,
+          chainName: $somniaTestnet.name,
+          nativeCurrency: $somniaTestnet.nativeCurrency,
+          rpcUrls: [$somniaTestnet.rpcUrls.default.http[0]],
+          blockExplorerUrls: [],
+        }]
+
+        try {
+          await provider.request({
+            method: 'wallet_switchEthereumChain',
+            params: [{ chainId: addChainParams[0].chainId }],
+          })
+        } catch (switchError: any) {
+          // Chain not recognized — add it first, then switch
+          await provider.request({
+            method: 'wallet_addEthereumChain',
+            params: addChainParams,
+          })
+        }
+      }
+    } catch (error) {
+      console.error('Failed to switch chain:', error)
+      throw error
+    }
+  }
+
   // Get or create wallet client
   const getWalletClient = async (address?: string): Promise<WalletClient> => {
     const addr = address || privy.user.value?.wallet?.address
     if (!addr) {
       throw new Error('No wallet address available')
     }
+
+    // Auto-switch to Somnia Testnet if needed
+    await ensureCorrectChain()
 
     if (!walletClient.value || currentAddress.value !== addr) {
       await initWalletClient(addr)
