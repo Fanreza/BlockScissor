@@ -1,61 +1,100 @@
 # BlockScissor
 
-On-chain Rock-Paper-Scissors on Somnia Network with real-time reactive updates.
+On-chain Rock-Paper-Scissors game built on **Somnia Testnet** with real-time reactive updates powered by the **Somnia Reactivity SDK**.
 
-Play best-of-3 against an on-chain bot or stake STT in PvP matches using commit-reveal.
+**Live Demo**: [blockscissor.vercel.app](https://blockscissor.vercel.app)
 
-**Live**: [blockscissor.vercel.app](https://blockscissor.vercel.app) (Somnia Testnet)
+**Demo Video**: [Watch on YouTube](#) <!-- TODO: Add video link -->
 
-## How It Works
+## How Somnia Reactivity Is Used
+
+BlockScissor uses the [`@somnia-chain/reactivity`](https://docs.somnia.network/developer/reactivity) SDK to deliver real-time game state updates without polling.
+
+### What Reactivity Enables
+
+- **Live Leaderboard**: When any player completes a game, the leaderboard page updates instantly for all viewers. No refresh needed.
+- **PvP Room State Sync**: When Player 2 joins a room, Player 1 sees the update in real-time. When either player commits their choices, the opponent is notified immediately.
+- **Auto-Reveal Trigger**: Once both players have committed (detected via reactive event), the reveal transaction is automatically triggered without manual intervention.
+- **Event-Driven Architecture**: All game events (`GameCreated`, `PlayerJoined`, `PlayerCommitted`, `PlayerRevealed`, `GameEnded`, `GameDraw`, `BotGame3Ended`) are subscribed to via the SDK's `somnia_watch` WebSocket method.
+
+### Implementation
+
+```typescript
+// Initialize SDK with WebSocket transport (required for subscriptions)
+import { SDK } from '@somnia-chain/reactivity'
+
+const wsClient = createPublicClient({
+  chain: somniaTestnet,
+  transport: webSocket('wss://dream-rpc.somnia.network/ws'),
+})
+
+const sdk = new SDK({ public: wsClient })
+
+// Subscribe to all contract events — no polling
+const subscription = await sdk.subscribe({
+  eventContractSources: [contractAddress],
+  ethCalls: [],
+  onData: (data) => {
+    // Decode event, update UI reactively
+    const eventSignature = data.params.result.topics[0]
+    // ... handle event
+  },
+})
+```
+
+Key files:
+- [`app/composables/useReactivity.ts`](app/composables/useReactivity.ts) — SDK initialization, event subscription, event decoding
+- [`app/pages/leaderboard.vue`](app/pages/leaderboard.vue) — Live leaderboard with reactive updates
+- [`app/pages/game/[id].vue`](app/pages/game/%5Bid%5D.vue) — PvP room with real-time state sync
+
+## Game Modes
 
 ### Bot Mode (Best of 3)
-1. Pick your 3 choices (Rock/Paper/Scissors) round by round
-2. All 3 choices are submitted in a single transaction
-3. Bot choices are generated on-chain via pseudo-random (`keccak256(blockhash, timestamp, gameId, sender, round)`)
-4. Results are resolved immediately — no waiting
+1. Pick Rock/Paper/Scissors for each of 3 rounds
+2. All choices submitted in a **single transaction**
+3. Bot choices generated on-chain via `keccak256(blockhash, timestamp, gameId, sender, round)`
+4. Results resolved immediately on-chain
 
-### PvP Mode (Commit-Reveal)
-1. Player 1 creates a match with a STT stake
-2. Player 2 joins with the same stake
-3. Both players commit `keccak256(choice, salt)` — hiding their move
-4. Both players reveal their choice + salt — contract verifies the hash
-5. Winner takes the full pot (2x stake). Draw returns stakes. 5-minute timeout per phase.
-
-### Reactivity
-The leaderboard and game pages update in real-time using the [Somnia Reactivity SDK](https://docs.somnia.network/developer/reactivity) (`@somnia-chain/reactivity`). The SDK subscribes to contract events via `somnia_watch` WebSocket — no polling.
-
-Events tracked: `GameCreated`, `BotGame3Ended`, `GameEnded`, `GameDraw`, `PlayerJoined`, `PlayerCommitted`, `PlayerRevealed`
+### PvP Mode (Best of 3, Commit-Reveal)
+1. Player 1 creates a room with an STT stake
+2. Player 2 joins via shared link (matches stake)
+3. Both players pick 3 choices → commit hashes in 1 transaction
+4. Auto-reveal after both commit → contract resolves all 3 rounds
+5. Winner takes 2x stake. Draw returns stakes. 5-minute timeout per phase.
 
 ## Tech Stack
 
-| Layer | Tech |
-|-------|------|
+| Layer | Technology |
+|-------|-----------|
 | Frontend | Nuxt 4, Vue 3, TypeScript |
 | Styling | Tailwind CSS v4 |
-| Wallet | Privy SDK (MetaMask fallback) |
-| Chain | Viem, `@somnia-chain/reactivity` |
-| Contract | Solidity 0.8.20, Hardhat |
-| Network | Somnia Testnet (Chain ID: 50312) |
+| Wallet | Privy JS SDK, MetaMask |
+| Blockchain | Viem, Somnia Reactivity SDK |
+| Smart Contract | Solidity 0.8.20, Hardhat |
+| Network | Somnia Testnet (Chain ID 50312) |
+| Deployment | Vercel |
 
 ## Setup
 
 ### Prerequisites
-- Node.js 18+, pnpm
-- MetaMask with [Somnia Testnet](https://docs.somnia.network/developer/network-info) configured
+- Node.js 18+
+- MetaMask with [Somnia Testnet](https://docs.somnia.network/developer/network-info) added
 - STT tokens from the [faucet](https://testnet.somnia.network/)
 
-### Install & Configure
+### Install
 
 ```bash
-pnpm install
-cp .env.example .env.local
+npm install --legacy-peer-deps
+cp .env.example .env
 ```
 
-Fill `.env.local`:
+Configure `.env`:
 ```
-NUXT_PUBLIC_PRIVY_APP_ID=       # from privy.io
-NUXT_PUBLIC_CONTRACT_ADDRESS=   # after deploying
-PRIVATE_KEY=                    # for deployment only
+NUXT_PUBLIC_RPC_URL=https://dream-rpc.somnia.network/
+NUXT_PUBLIC_CHAIN_ID=50312
+NUXT_PUBLIC_PRIVY_APP_ID=<your privy app id>
+NUXT_PUBLIC_CONTRACT_ADDRESS=<deployed contract address>
+PRIVATE_KEY=<deployer wallet private key>
 ```
 
 ### Deploy Contract
@@ -65,54 +104,54 @@ npx hardhat compile
 npx hardhat run scripts/deploy.cjs --network somniaTestnet
 ```
 
-Copy the printed contract address to `.env.local`.
+Copy the output address to `NUXT_PUBLIC_CONTRACT_ADDRESS` in `.env`.
 
 ### Run
 
 ```bash
-pnpm dev
+npm run dev
 ```
 
-## Contract
+## Smart Contract
 
-**File**: `contracts/RPSGame.sol`
+**File**: [`contracts/RPSGame.sol`](contracts/RPSGame.sol)
 
-Single contract handling both PvP and bot games. No factory pattern — all games stored in one mapping.
+Single contract handling both PvP and bot games. All games stored in one mapping.
 
-Key functions:
-- `createGame()` — Create PvP match (payable, sets stake)
-- `joinGame(gameId)` — Join open PvP match (must match stake)
-- `commit(gameId, hash)` / `reveal(gameId, choice, salt)` — Commit-reveal flow
-- `claimTimeout(gameId)` — Claim win if opponent times out (5 min)
-- `playBotBestOf3(uint8[3] choices)` — Single-tx bot game, 3 rounds
-- `getGame(gameId)` / `getBotGame3(gameId)` — Read game state
+| Function | Description |
+|----------|-------------|
+| `createRoom()` | Create PvP room (payable, sets stake) |
+| `joinRoom(gameId)` | Join open PvP room (must match stake) |
+| `commitChoices(gameId, hash)` | Submit hashed choices for 3 rounds |
+| `revealChoices(gameId, choices, salts)` | Reveal choices, auto-resolve if both revealed |
+| `claimTimeout(gameId)` | Claim win if opponent times out (5 min) |
+| `playBotBestOf3(choices[3])` | Single-tx bot game, 3 rounds |
 
 ## Project Structure
 
 ```
 app/
   composables/
+    useReactivity.ts   # Somnia Reactivity SDK integration
     useRPS.ts          # Contract read/write functions
-    useReactivity.ts   # Somnia Reactivity SDK subscriptions
-    useViemClients.ts  # Viem public + wallet client setup
-    usePrivy.ts        # Wallet auth via Privy
+    useViemClients.ts  # Viem public + wallet client
+    usePrivy.ts        # Wallet authentication
+    useConfetti.ts     # Win/draw celebrations
   pages/
-    index.vue          # Homepage + PvP lobby
-    game/bot.vue       # Bot best-of-3 game flow
+    index.vue          # Homepage, game modes, PvP lobby
+    game/bot.vue       # Bot best-of-3 game
     game/[id].vue      # PvP game room
-    leaderboard.vue    # Stats + recent games
-  components/game/     # ChoiceSelector, BattleArena, Overlay, etc.
+    leaderboard.vue    # Live stats + recent games
+  components/game/
+    ChoiceSelector.vue # Card-style weapon picker
+    ChoiceCard.vue     # SVG weapon card (Rock/Paper/Scissors)
+    RoundIndicator.vue # Best-of-3 round tracker
+    Overlay.vue        # Game result overlay with confetti
 contracts/
-  RPSGame.sol          # Main contract
+  RPSGame.sol          # Main smart contract
+scripts/
+  deploy.cjs           # Deployment script
 ```
-
-## Security
-
-This contract is **not audited**. Do not use with real funds.
-
-- Commit-reveal prevents move snooping in PvP
-- Timeout prevents indefinite game locks
-- Bot randomness is pseudo-random (blockhash-based) — not suitable for high-stakes
 
 ## License
 
